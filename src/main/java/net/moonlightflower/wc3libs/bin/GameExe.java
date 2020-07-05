@@ -1,202 +1,79 @@
 package net.moonlightflower.wc3libs.bin;
 
 import dorkbox.peParser.PE;
-import net.moonlightflower.wc3libs.misc.Registry;
+import net.moonlightflower.wc3libs.misc.ProcCaller;
+import net.moonlightflower.wc3libs.port.GameVersion;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.util.ArrayList;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class GameExe {
-    public final static File WAR3_EXE_PATH = new File("war3.exe");
-    public final static File WARCRAFT_III_EXE_PATH = new File("Warcraft III.exe");
-    public final static File FROZEN_THRONE_EXE_PATH = new File("Frozen Throne.exe");
-
-    private final File _file;
-
-    public File getFile() {
-        return _file;
-    }
-
-    public String getVersionString() throws IOException {
+    @Nonnull
+    public static String getVersionString(@Nonnull File file) throws IOException {
         try {
-            return PE.getVersion(_file.getAbsolutePath());
+            String s = file.getAbsolutePath();
+
+            return PE.getVersion(s);
         } catch (Exception e) {
-            throw new IOException(e);
-        }
-    }
+            File tmpBat = File.createTempFile("getVersionString", "tmp_proxy.bat");
 
-    public Version getVersion() throws IOException {
-        try {
-            return new Version(PE.getVersion(_file.getAbsolutePath()));
-        } catch (Exception _e) {
-            try {
-                return getVersionFallback();
-            } catch (Exception e) {
-                throw new IOException(e);
-            }
-        }
-    }
+            tmpBat.deleteOnExit();
 
-    /**
-     * Reads the game version from embedded telemetry data
-     */
-    private Version getVersionFallback() throws IOException {
-        FileChannel ch1 = new RandomAccessFile(_file, "r").getChannel();
-        long size = ch1.size();
-        ByteBuffer m1 = ch1.map(FileChannel.MapMode.READ_ONLY, 0L, size);
-        byte[] buffer = new byte[KEY.length];
-        ByteBuffer verBuffer = ByteBuffer.allocate(15);
-        for (int pos = 0; pos < size - KEY.length - 1; pos++) {
-            m1.position(pos);
-            m1.get(buffer);
-            if (Arrays.equals(buffer, KEY)) {
-                byte b = m1.get();
-                while (verBuffer.get(verBuffer.position()) != 0x0 || b != 0x0) {
-                    verBuffer.put(b);
-                    b = m1.get();
-                }
-                String verString = new String(verBuffer.array()).substring(0, verBuffer.position());
-                return new Version(verString);
-            }
-        }
-        throw new IOException("telemetry data could not be extracted");
-    }
+            File tmpOut = File.createTempFile("getVersionString", "tmp_out.txt");
 
-    private static final byte[] KEY = {0x54, 0x65, 0x6c, 0x65, 0x6d, 0x65, 0x74, 0x72, 0x79, 0x2e, 0x50, 0x72, 0x6f, 0x67, 0x72,
-            0x61, 0x6d, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x3d};
+            tmpOut.deleteOnExit();
 
-    public GameExe(@Nonnull File file) {
-        _file = file;
-    }
+            String query = "\"%SystemRoot%\\System32\\Wbem\\wmic.exe\""+
+                    " datafile"+
+                    " where"+
+                    String.format(" name=\"%s\"", file.getAbsolutePath().replaceAll("\\\\", "\\\\\\\\"))+
+                    " get"+
+                    " Version"+
+                    " /value"+
+                    String.format(" 1>\"%s\"", tmpOut.getAbsolutePath().replaceAll("\\\\", "\\\\\\\\"));
 
-    @Nullable
-    public static GameExe fromRegistry() {
-        try {
-            return new GameExe(new File(Registry.get("HKCU\\Software\\Blizzard Entertainment\\Warcraft III", "Program")));
-        } catch (IOException e) {
-            return null;
-        }
-    }
+            //System.out.println("load " + query);
 
-    public static class Version implements Comparable<Version> {
-        private final List<Integer> _versionNumList;
+            Files.write(tmpBat.toPath(), Arrays.asList("chcp 65001", query, "EXIT /B %ERRORLEVEL%"));
 
-        public Version(@Nonnull List<Integer> versionNumList) {
-            _versionNumList = new ArrayList<>(versionNumList);
-        }
+            ProcCaller proc = new ProcCaller(tmpBat.getAbsolutePath());
 
-        public Version(@Nonnull String versionS) {
-            Pattern pattern = Pattern.compile("(\\d+)", Pattern.DOTALL);
+            proc.exec();
 
-            Matcher matcher = pattern.matcher(versionS);
-
-            int start = 0;
-            List<Integer> versionNumList = new ArrayList<>();
-
-            while (start < versionS.length() && matcher.find(start)) {
-                int version = Integer.parseInt(matcher.group(1));
-
-                start = matcher.end() + 1;
-
-                versionNumList.add(version);
+            if (proc.exitVal() != 0) {
+                throw new IOException(proc.getErrString());
             }
 
-            _versionNumList = versionNumList;
-        }
+            BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(tmpOut), StandardCharsets.UTF_8));
 
-        @Override
-        public int compareTo(@Nonnull Version other) {
-            for (int i = 0; ; i++) {
-                int curNum = (i < _versionNumList.size()) ? _versionNumList.get(i) : 0;
-                int otherCurNum = (i < other._versionNumList.size()) ? other._versionNumList.get(i) : 0;
+            StringBuilder sb = new StringBuilder();
+            String line;
 
-                if (curNum > otherCurNum) return 1;
-                if (curNum < otherCurNum) return -1;
-
-                if (i == _versionNumList.size() && i == other._versionNumList.size()) return 0;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line);
             }
-        }
-    }
 
-    public static final Version VERSION_1_29 = new Version(Arrays.asList(1, 29));
+            String versionString = sb.toString().replaceAll("[^0-9.]", "");
 
-    public static Version _curVersion = null;
+            if (versionString.isEmpty()) versionString = null;
 
-    @Nullable
-    public static Version getVersion_simple() {
-        if (_curVersion == null) {
-            GameExe gameExe = fromRegistry();
-
-            if (gameExe != null) {
-                try {
-                    _curVersion = gameExe.getVersion();
-                } catch (IOException e) {
-                    return null;
-                }
+            if (versionString == null) {
+                throw new IOException(e.getMessage() + "; " + sb.toString());
             }
+
+            return versionString;
         }
-
-        return _curVersion;
-    }
-
-    public static void setVersion(@Nullable Version version) {
-        _curVersion = version;
     }
 
     @Nonnull
-    public static GameExe fromDir(@Nonnull File dir, @Nonnull Version version) {
-        if (version.compareTo(VERSION_1_29) >= 0) return new GameExe(new File(dir, WARCRAFT_III_EXE_PATH.toString()));
-
-        return new GameExe(new File(dir, WAR3_EXE_PATH.toString()));
-    }
-
-    @Nullable
-    public static GameExe fromDir(@Nonnull File dir) {
-        Version version;
-
-        File warcraftIIIFile = new File(dir, WARCRAFT_III_EXE_PATH.toString());
-
-        if (warcraftIIIFile.exists()) {
-            try {
-                version = new GameExe(warcraftIIIFile).getVersion();
-
-                return fromDir(dir, version);
-            } catch (IOException ignored) {
-            }
-        }
-
-        File frozenThroneFile = new File(dir, FROZEN_THRONE_EXE_PATH.toString());
-
-        if (frozenThroneFile.exists()) {
-            try {
-                version = new GameExe(frozenThroneFile).getVersion();
-
-                return fromDir(dir, version);
-            } catch (IOException ignored) {
-            }
-        }
-
-        File war3File = new File(dir, WAR3_EXE_PATH.toString());
-
-        if (war3File.exists()) {
-            try {
-                version = new GameExe(war3File).getVersion();
-
-                return fromDir(dir, version);
-            } catch (IOException ignored) {
-            }
-        }
-
-        return null;
+    public static GameVersion getVersion(@Nonnull File file) throws IOException {
+        return new GameVersion(getVersionString(file));
     }
 }

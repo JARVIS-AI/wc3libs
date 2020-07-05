@@ -42,6 +42,16 @@ public class JMpqPort extends MpqPort {
 		}
 	}
 
+	@Override
+	public MpqPort.In createIn() {
+		return new In();
+	}
+
+	@Override
+	public MpqPort.Out createOut() {
+		return new Out();
+	}
+
 	public static class In extends MpqPort.In {
 		private void commitJ(@Nonnull Vector<File> mpqFiles) throws IOException {
 			Vector<String> lines = new Vector<>();
@@ -321,13 +331,13 @@ public class JMpqPort extends MpqPort {
 
 	@Nonnull
 	@Override
-	public Out.Result getGameFiles(@Nonnull File... files) throws IOException {
+	public Out.Result getGameFiles(@Nonnull File... files) throws IOException, NotFoundException {
 		MpqPort.Out portOut = new Out();
 
 		for (File file : files) {
 			portOut.add(file);
 		}
 
-		return portOut.commit(MpqPort.getWc3Mpqs());
+		return portOut.commit(MpqPort.getWar3Mpqs());
 	}
 }

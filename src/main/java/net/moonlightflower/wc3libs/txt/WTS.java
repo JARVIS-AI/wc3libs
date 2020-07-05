@@ -1,6 +1,6 @@
 package net.moonlightflower.wc3libs.txt;
 
-import net.moonlightflower.wc3libs.port.JMpqPort;
+import net.moonlightflower.wc3libs.port.Context;
 import net.moonlightflower.wc3libs.port.MpqPort;
 
 import javax.annotation.Nonnull;
@@ -24,8 +24,7 @@ public class WTS {
     public final static File CAMPAIGN_PATH = new File("war3campaign.WTS");
 
     private static final Pattern KEY_PATTERN = Pattern.compile("STRING ([\\d]+)[\\n\\s]*\\{([^\\}]*)[\\n]*\\}");
-    private static final Pattern COMMENT_PATTERN = Pattern.compile("//[^\\n]*\\n", Pattern.DOTALL);
-    private static final Pattern ENTRY_PATTERN = Pattern.compile("^(.*)");
+    private static final Pattern COMMENT_PATTERN = Pattern.compile("(?m)^//.*");
 
     private final Map<Integer, String> _vals = new LinkedHashMap<>();
 
@@ -90,7 +89,7 @@ public class WTS {
             int key = entry.getKey();
             String val = entry.getValue();
 
-            writer.write(String.format("STRING %s\n{\n%s\n}\n", key, val));
+            writer.write(String.format("STRING %s\r\n{\r\n%s\r\n}\r\n", key, val));
         }
 
         writer.close();
@@ -109,17 +108,9 @@ public class WTS {
 
         while (matcher.find()) {
             int key = Integer.parseInt(matcher.group(1));
-            String val = matcher.group(2);
+            String val = matcher.group(2).trim();
 
-            val = val.replaceAll("\\p{Cntrl}", "");
-
-            Matcher entryMatcher = ENTRY_PATTERN.matcher(val);
-
-            if (entryMatcher.find()) {
-                val = entryMatcher.group(1);
-
-                addEntry(key, val != null ? val : "");
-            }
+            addEntry(key, val);
         }
     }
 
@@ -140,7 +131,7 @@ public class WTS {
 
     @Nonnull
     public static WTS ofMapFile(@Nonnull File mapFile) throws Exception {
-        MpqPort.Out portOut = new JMpqPort.Out();
+        MpqPort.Out portOut = Context.getService(MpqPort.class).createOut();
 
         portOut.add(WTS.GAME_PATH);
 

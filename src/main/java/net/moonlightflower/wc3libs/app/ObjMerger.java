@@ -15,16 +15,14 @@ import net.moonlightflower.wc3libs.dataTypes.app.FlagsInt;
 import net.moonlightflower.wc3libs.dataTypes.app.War3String;
 import net.moonlightflower.wc3libs.misc.*;
 import net.moonlightflower.wc3libs.misc.Math;
-import net.moonlightflower.wc3libs.port.JMpqPort;
-import net.moonlightflower.wc3libs.port.MpqPort;
-import net.moonlightflower.wc3libs.port.Orient;
+import net.moonlightflower.wc3libs.port.*;
 import net.moonlightflower.wc3libs.slk.RawMetaSLK;
 import net.moonlightflower.wc3libs.slk.SLK;
 import net.moonlightflower.wc3libs.slk.SLKState;
 import net.moonlightflower.wc3libs.slk.app.doodads.DoodSLK;
 import net.moonlightflower.wc3libs.slk.app.meta.*;
 import net.moonlightflower.wc3libs.slk.app.objs.*;
-import net.moonlightflower.wc3libs.txt.Jass;
+import net.moonlightflower.wc3libs.txt.app.jass.Jass;
 import net.moonlightflower.wc3libs.txt.Profile;
 import net.moonlightflower.wc3libs.txt.TXTSectionId;
 import net.moonlightflower.wc3libs.txt.WTS;
@@ -75,10 +73,10 @@ public class ObjMerger {
     private final Collection<ObjMod> _inObjMods = new LinkedHashSet<>();
     private final Map<File, ObjMod> _outObjMods = new LinkedHashMap<>();
 
-    private void addObjMod(@Nonnull File inFile, @Nonnull ObjMod otherObjMod) throws Exception {
+    private void addObjMod(@Nonnull File inFile, @Nonnull ObjMod<?> otherObjMod) throws Exception {
         _inObjMods.add(otherObjMod);
 
-        ObjPack pack = otherObjMod.reduce(_metaSlk, Collections.singletonList(W3D.class));
+        ObjPack<?> pack = otherObjMod.reduce(_metaSlk, Collections.singletonList(W3D.class));
 
         Map<ObjId, ObjId> baseObjIds = pack.getBaseObjIds();
 
@@ -182,10 +180,6 @@ public class ObjMerger {
         objMod.merge(pack.getObjMod());
     }
 
-    private boolean isObjModFileExtended(File inFile) {
-        return (inFile.equals(W3A.GAME_PATH) || inFile.equals(W3D.GAME_PATH) || inFile.equals(W3Q.GAME_PATH));
-    }
-
     public interface Filter {
         Predicate<Id> calcRemovedIds(Collection<Id> allIds);
     }
@@ -193,7 +187,7 @@ public class ObjMerger {
     public Filter FILTER_MODDED_OR_CUSTOM = allIds -> {
         Collection<Id> moddedIds = new LinkedHashSet<>();
 
-        for (ObjMod objMod : _inObjMods) {
+        for (ObjMod<?> objMod : _inObjMods) {
             for (ObjMod.Obj obj : objMod.getObjsList()) {
                 moddedIds.add(obj.getId());
             }
@@ -263,22 +257,17 @@ public class ObjMerger {
                 if (objMod.containsObj((ObjId) id)) {
                     ObjMod.Obj objModObj = objMod.getObj((ObjId) id);
 
-                    for (Map.Entry<MetaFieldId, ObjMod.Obj.Field> fieldEntry : objModObj.getFields().entrySet()) {
-                        MetaFieldId fieldId = fieldEntry.getKey();
-                        ObjMod.Obj.Field field = fieldEntry.getValue();
+                    for (ObjMod.Obj.Mod mod : objModObj.getMods()) {
+                        DataType realVal = mod.getVal();
 
-                        for (ObjMod.Obj.Field.Val val : field.getVals().values()) {
-                            DataType realVal = val.getVal();
+                        if (realVal != null) {
+                            String[] vals = realVal.toString().split(",");
 
-                            if (realVal != null) {
-                                String[] vals = realVal.toString().split(",");
+                            for (String valSingle : vals) {
+                                ObjId ref = ObjId.valueOf(valSingle);
 
-                                for (String valSingle : vals) {
-                                    ObjId ref = ObjId.valueOf(valSingle);
-
-                                    if (ref.toString().length() == 4) {
-                                        refs.add(ref);
-                                    }
+                                if (ref.toString().length() == 4) {
+                                    refs.add(ref);
                                 }
                             }
                         }
@@ -435,7 +424,7 @@ public class ObjMerger {
 
             log.info("examine tokens");
             for (Token token : j.getTokens()) {
-                if (token.getType() == JassLexer.INT_LITERAL) {
+                if (token.getType() == JassLexer.OCT_INT_LITERAL || token.getType() == JassLexer.DEC_INT_LITERAL || token.getType() == JassLexer.HEX_INT_LITERAL || token.getType() == JassLexer.ID_INT_LITERAL) {
                     String text = token.getText();
 
                     int val;
@@ -458,6 +447,30 @@ public class ObjMerger {
                         jRefedIds.add(id);
                     }
                 }
+
+                /*if (token.getType() == JassLexer.INT_LITERAL) {
+                    String text = token.getText();
+
+                    int val;
+
+                    if (text.startsWith("0x") || text.startsWith("0X")) {
+                        val = Math.decode(text.substring(2).toLowerCase(), Math.CODE_HEX);
+                    } else if (text.startsWith("$")) {
+                        val = Math.decode(text.substring(1), Math.CODE_HEX);
+                    } else if (text.startsWith("0")) {
+                        val = Math.decode(text.substring(1), Math.CODE_OCT);
+                    } else if (text.startsWith("'")) {
+                        val = Math.decode(text.substring(1, text.length() - 1), Math.CODE_ASCII);
+                    } else {
+                        val = Math.decode(text, Math.CODE_DEC);
+                    }
+
+                    Id id = Id.valueOf(Math.encode(val, Math.CODE_ASCII));
+
+                    if (id.toString().length() == 4) {
+                        jRefedIds.add(id);
+                    }
+                }*/
             }
         }
 
@@ -861,7 +874,7 @@ public class ObjMerger {
 
             Wc3BinOutputStream outStream = new Wc3BinOutputStream(outFile);
 
-            if (!objMod.getObjs().isEmpty()) objMod.write(outStream, isObjModFileExtended(inFile));
+            if (!objMod.getObjs().isEmpty()) objMod.write(outStream);
 
             outStream.close();
         }
@@ -921,7 +934,7 @@ public class ObjMerger {
             Wc3BinOutputStream outStream = new Wc3BinOutputStream(outFile);
 
             if (!objMod.getObjs().isEmpty()) {
-                objMod.write(outStream, isObjModFileExtended(inFile));
+                objMod.write(outStream);
             }
 
             outStream.close();
@@ -1055,7 +1068,7 @@ public class ObjMerger {
     }
 
     public void exportMap(File mapFile, File outDir) throws Exception {
-        exportMap(mapFile, true, MpqPort.getWc3Dir(), outDir);
+        exportMap(mapFile, true, Context.getService(GameDirFinder.class).get(), outDir);
     }
 
     public void readFromMap(File mapFile, boolean includeNativeData, File wc3Dir, File outDir) throws Exception {
@@ -1138,7 +1151,7 @@ public class ObjMerger {
     }
 
     public void readFromMap(File mapFile, boolean includeNativeData, File outDir) throws Exception {
-        readFromMap(mapFile, includeNativeData, MpqPort.getWc3Dir(), outDir);
+        readFromMap(mapFile, includeNativeData, Context.getService(GameDirFinder.class).get(), outDir);
     }
 
 }

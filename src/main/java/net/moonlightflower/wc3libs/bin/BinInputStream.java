@@ -6,7 +6,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-public class BinInputStream extends BinStream {
+public class BinInputStream extends BinStream implements AutoCloseable {
 	public byte readByte() throws StreamException {
 		try {
 			return _bytes.get(_pos++);
@@ -25,7 +25,7 @@ public class BinInputStream extends BinStream {
 			
 			return vals;
 		} catch (IndexOutOfBoundsException e) {
-			throw new StreamException(this);
+			throw new StreamException(this, e.getMessage());
 		}
 	}
 
@@ -98,6 +98,7 @@ public class BinInputStream extends BinStream {
 
 	private InputStream _inStream;
 
+	@Override
 	public void close() throws IOException {
 		_inStream.close();
 	}

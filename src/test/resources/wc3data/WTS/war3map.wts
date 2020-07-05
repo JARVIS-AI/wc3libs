@@ -24,7 +24,7 @@ STRING 14
 // Abilities: A001 (BlubLol), Researchtip (Tooltip - Learn (aret))
 {
 hi there
-Blub {"Hi" '|cff800080Das|r ist ein Test' 
+Blub {"Hi" '|cff800080Das|r ist ein Test'
 next line
 // this is a comment
 and so on
@@ -39,3 +39,21 @@ STRING 11
 xaxaxaxaxaxa
 }
 
+STRING 2224
+{
+https://test.com
+}
+
+STRING 2228
+// real comment
+{
+empty
+}
+
+STRING 4322
+{
+Some
+implicit
+newline
+string
+}
